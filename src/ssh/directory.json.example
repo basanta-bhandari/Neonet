@@ -1,0 +1,10 @@
+{
+  "devices": [
+    {
+      "identity": { "public_key": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      "alias": "core-a",
+      "user": "neo",
+      "resolution": { "host": "127.0.0.1", "port": 22, "known_hosts": "/path/to/known_hosts" }
+    }
+  ]
+}
