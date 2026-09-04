@@ -60,6 +60,11 @@ pub fn paired_devices(root: &Path) -> Vec<PairedDevice> {
     records
 }
 
+/// The default pairing-token lifetime, in seconds.
+pub fn default_ttl() -> u64 {
+    DEFAULT_TTL_SECS
+}
+
 /// Issue a fresh single-use pairing token. Replaces any previous pending token
 /// (only one "drive" is ever plugged in at a time). Returns the token string
 /// the operator reads over the shoulder / writes down.

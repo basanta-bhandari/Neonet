@@ -15,6 +15,181 @@ use std::{
     sync::Arc,
 };
 
+/// Every command the shell understands — used for tab completion at the prompt.
+pub const SHELL_COMMANDS: &[&str] = &[
+    "browse",
+    "channel",
+    "clear",
+    "clock",
+    "connect",
+    "core",
+    "daemons",
+    "devices",
+    "echo",
+    "edge",
+    "flash",
+    "flasher",
+    "fork",
+    "help",
+    "history",
+    "host",
+    "join",
+    "lobby",
+    "nsh",
+    "operator",
+    "pair",
+    "pairs",
+    "post",
+    "quit",
+    "reboot",
+    "register",
+    "replicate",
+    "revoke",
+    "say",
+    "scan",
+    "send",
+    "serve",
+    "stop",
+    "store",
+    "sysinfo",
+    "transfers",
+    "update",
+    "whoami",
+];
+
+/// Compact, plain-language help. `help <topic>` drills down; bare `help` prints
+/// the essentials.
+pub fn print_help(topic: Option<&str>) {
+    use neonet::shell::{BOLD, CYAN, DIM, RESET};
+    match topic {
+        None => {
+            println!("{CYAN}{}{RESET}", neonet::shell::logo());
+            println!(
+                "{BOLD}Welcome to the NeoNet shell{RESET} — {DIM}NeoNet {}{RESET}\n",
+                neonet::shell::VERSION
+            );
+            println!("Type a command and press Enter.  The box points to {DIM}friendlier terms you'll use every day{RESET}:");
+            println!();
+            println!("{BOLD}Everyday basics{RESET}");
+            println!("  whoami        see who this device is");
+            println!("  devices       see devices you've saved");
+            println!("  send /store   move files between devices");
+            println!("  message       private message to one device (alias: channel)");
+            println!("  host  /join   start or join a chat room (a lobby)");
+            println!("  help  TOPIC   detail on any topic   |   quit  leave");
+            println!();
+            println!("{BOLD}Pick a topic for more{RESET}");
+            println!("  devices   files   messages   chat   pair   mesh   system");
+        }
+        Some(topic) => match topic {
+            "devices" | "device" => {
+                println!("{BOLD}devices{RESET}");
+                println!("  A device is {DIM}someone you can reach through the mesh{RESET}.");
+                println!("  devices                          list saved devices");
+                println!("  connect DEVICE                  open a shell on that device");
+                println!("  channel  DEVICE [MSG]           private message it");
+                println!("  browse   DEVICE [FOLDER]        list its shared files");
+                println!("  fork     DEVICE FOLDER          copy its shared files here");
+            }
+            "files" | "file" | "send" => {
+                println!("{BOLD}files / send / store{RESET}");
+                println!("  send     DEVICE FILE            send a file to a device");
+                println!("  transfers                       see incoming files");
+                println!("  store push   DEVICE FILE        keep a file on a device");
+                println!("  store pull   DEVICE CODE [OUT]  fetch a stored file back");
+                println!("  replicate  SRC DST CODE         copy a stored file between cores");
+            }
+            "messages" | "message" | "channel" => {
+                println!("{BOLD}message{RESET}");
+                println!("  channel DEVICE MSG           send a private message");
+                println!("  channel DEVICE               read the messages with that device");
+            }
+            "chat" | "lobby" | "host" => {
+                println!("{BOLD}chat {DIM}(lobby){RESET}");
+                println!("  host NAME                     start a chat room");
+                println!("  join NAME DEVICE CODE         join one (DEVICE + CODE from the host)");
+                println!("  say TEXT                      post to your current room");
+                println!("  post NAME TEXT                post to a specific room");
+                println!("  lobby log NAME                read what arrived");
+                println!("  lobby members NAME            who is in");
+                println!("  lobby leave NAME              leave");
+            }
+            "pair" | "pairing" => {
+                println!("{BOLD}pair{RESET}");
+                println!("  pair [MINUTES]               issue a one-time code (you accept it)");
+                println!("  flash DEVICE CODE            use someone else's code");
+                println!("  pairs                        show who is paired with this device");
+                println!("  revoke DEVICE CODE           unpair a device");
+                println!("  operator add CODE            make this device an operator");
+            }
+            "mesh" | "network" => {
+                println!("{BOLD}mesh{RESET}");
+                println!("  core --listen ADDR           run a relay (a 'core') in the background");
+                println!("  serve                        same as core");
+                println!("  edge --bootstrap FILE        run a connection to a core in background");
+                println!("  daemons / stop PID           manage background jobs");
+                println!("  register DEVICE ADDR [TTL]   tell a 'find me' service where you are");
+                println!("  scan   DEVICE [FILTER]       ask it who is registered");
+                println!("  NEOnet update                pull the newest NeoNet");
+            }
+            "system" | "whoami" | "info" => {
+                println!("{BOLD}system{RESET}");
+                println!("  whoami      who this device is");
+                println!("  sysinfo     host OS / RAM / battery");
+                println!("  clock       show the time in the prompt");
+                println!("  history     last commands");
+                println!("  echo TEXT   print text");
+                println!("  clear       clear the screen");
+                println!("  reboot      restart the shell");
+                println!("  quit        leave the shell");
+            }
+            other => {
+                println!(
+                    "No topic '{other}'. Try: devices, files, messages, chat, pair, mesh, system."
+                );
+            }
+        },
+    }
+}
+
+/// Tab completion: complete the first word from the known command set.
+struct ShellCompleter;
+
+impl rustyline::completion::Completer for ShellCompleter {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        let line = &line[..pos];
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.len() > 1 {
+            return Ok((pos, Vec::new()));
+        }
+        let prefix = words.first().copied().unwrap_or("");
+        let matches: Vec<String> = SHELL_COMMANDS
+            .iter()
+            .filter(|c| c.starts_with(&prefix.to_ascii_lowercase()))
+            .map(|c| c.to_string())
+            .collect();
+        let start = line.len() - prefix.len();
+        Ok((start, matches))
+    }
+}
+
+impl rustyline::hint::Hinter for ShellCompleter {
+    type Hint = String;
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
+        None
+    }
+}
+impl rustyline::Helper for ShellCompleter {}
+impl rustyline::highlight::Highlighter for ShellCompleter {}
+impl rustyline::validate::Validator for ShellCompleter {}
+
 /// NeoNet — identity-based messaging, file transfer, and remote-login
 /// resolution over a small, owned mesh. Run `neonet <command> --help` for
 /// details on any one command.
@@ -302,6 +477,43 @@ enum Command {
         #[arg(long)]
         release: bool,
     },
+    /// Flasher: pair two machines without typing keys/codes/pins, carried on a
+    /// USB drive. The drive holds a `neonet` bundle and a pairing token written
+    /// by the machine it was flashed from.
+    Flasher {
+        #[command(subcommand)]
+        command: FlasherCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum FlasherCommand {
+    /// Check whether `neonet` is installed on this machine; if not, install it
+    /// (preferring a bundled binary on the drive, else a source build), then
+    /// report what happened.
+    Ensure {
+        /// Directory of the drive (default: current directory).
+        #[arg(short, long)]
+        dir: Option<PathBuf>,
+    },
+    /// On the machine being flashed from: write the identity+token bundle into
+    /// the drive's directory. The drive is now "flashed from" this machine.
+    Author {
+        /// Directory of the drive (default: current directory).
+        #[arg(short, long)]
+        dir: PathBuf,
+    },
+    /// On the target machine: ensure `neonet` is installed, read the drive's
+    /// bundle, ask for confirmation, and only then trust the device the drive
+    /// was flashed from (and record it as a known device).
+    Adopt {
+        /// Directory of the drive (default: current directory).
+        #[arg(short, long)]
+        dir: PathBuf,
+        /// Skip the confirmation prompt and trust anyway (not recommended).
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -541,6 +753,12 @@ async fn mesh_client(
 
     let client = app::Client::connect(Arc::clone(&node)).await?;
     Ok((node, peer, client))
+}
+
+/// First 12 hex chars of a fingerprint — enough to tell two devices apart at a
+/// glance without drowning the user in a wall of raw hex.
+fn short_id(fp: &str) -> String {
+    fp.chars().take(12).collect()
 }
 
 /// The shell's one persistent mesh connection. Created once when the shell
@@ -1794,7 +2012,6 @@ async fn run() -> Result<()> {
         None => {
             neonet::shell::boot();
             neonet::shell::home(None);
-            use neonet::shell::{BOLD, RESET};
 
             let mut history = neonet::shell::History::load(&root);
             let mut clock = false;
@@ -1823,414 +2040,390 @@ async fn run() -> Result<()> {
                 );
             }
 
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<Option<String>>(16);
-            let stdin_tx = tx.clone();
-            let stdin_reader = std::thread::spawn(move || {
-                use std::io::BufRead;
-                let stdin = std::io::stdin();
-                for line in stdin.lock().lines() {
-                    match line {
-                        Ok(text) => {
-                            if stdin_tx.blocking_send(Some(text)).is_err() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
-                    }
-                }
-                let _ = stdin_tx.blocking_send(None);
-            });
+            let mut editor: rustyline::Editor<ShellCompleter, rustyline::history::DefaultHistory> =
+                rustyline::Editor::new()?;
+            editor.set_helper(Some(ShellCompleter));
 
             loop {
                 let context = neonet::shell::Context::Local;
                 let cwd = "/";
-                print!("{}", neonet::shell::prompt(clock, &context, cwd));
-                use std::io::Write;
-                let _ = io::stdout().flush();
+                let prompt = neonet::shell::prompt(clock, &context, cwd);
 
-                tokio::select! {
-                    signal = tokio::signal::ctrl_c() => {
-                        if signal.is_ok() {
-                            println!();
-                            println!("KeyboardInterrupt — use 'quit' to exit.");
+                let line = match editor.readline(&prompt) {
+                    Ok(line) => line,
+                    Err(rustyline::error::ReadlineError::Interrupted) => {
+                        println!("^C — use 'quit' to exit.");
+                        continue;
+                    }
+                    Err(rustyline::error::ReadlineError::Eof) => break,
+                    Err(err) => {
+                        println!("{}{err}{}", neonet::shell::RED, neonet::shell::RESET);
+                        break;
+                    }
+                };
+                let _ = editor.add_history_entry(line.as_str());
+                history.push(&line);
+                let words = neonet::shell::tokenize(&line);
+                if words.is_empty() {
+                    continue;
+                }
+                let command = words[0].to_ascii_lowercase();
+                let args = &words[1..];
+
+                let mut quit = false;
+                match command.as_str() {
+                    "help" => {
+                        print_help(args.first().map(|s| s.as_str()));
+                    }
+                    "clear" => {
+                        print!("\x1b[2J\x1b[H");
+                        use std::io::Write;
+                        let _ = io::stdout().flush();
+                    }
+                    "clock" => {
+                        clock = !clock;
+                        println!("prompt time {}", if clock { "on" } else { "off" });
+                    }
+                    "echo" => println!("{}", args.join(" ")),
+                    "history" => {
+                        for entry in &history.entries {
+                            println!("{entry}");
                         }
                     }
-                    line = rx.recv() => {
-                        let Some(Some(line)) = line else { break };
-                        history.push(&line);
-                        let words = neonet::shell::tokenize(&line);
-                        if words.is_empty() {
+                    "sysinfo" => {
+                        for row in neonet::shell::system_info() {
+                            println!("{row}");
+                        }
+                    }
+                    "whoami" => {
+                        let fp = local_identity.public().fingerprint();
+                        println!("NeoNet {SOFTWARE_VERSION}");
+                        println!(
+                            "device id: {}{}{}",
+                            neonet::shell::GREEN,
+                            short_id(&fp),
+                            neonet::shell::RESET
+                        );
+                        println!("full id: {fp}");
+                        println!("credentials: {}", local_identity.path().display());
+                    }
+                    "devices" => {
+                        let directory = match load_devices(&root) {
+                            Ok(d) => d,
+                            Err(err) => {
+                                println!("{}{:#}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        let devices = ssh::devices(&directory);
+                        if devices.is_empty() {
+                            println!("No devices configured. Add entries to {}/devices.json — see docs/CLI.md#devices.", root.display());
+                        } else {
+                            for (alias, fingerprint) in devices {
+                                println!("{alias}\t{fingerprint}");
+                            }
+                        }
+                    }
+                    "quit" | "exit" => {
+                        quit = true;
+                    }
+                    "reboot" => {
+                        println!("Rebooting shell...");
+                        neonet::shell::boot();
+                        neonet::shell::home(None);
+                    }
+                    // ---- mesh ----
+                    "channel" => {
+                        // channel ALIAS MSG   send to that device
+                        // channel ALIAS       show the received log with that peer
+                        let Some(alias) = args.first().cloned() else {
+                            println!("usage: channel ALIAS [MSG]  (MSG omitted — show the log with that peer)");
+                            continue;
+                        };
+                        let known = load_devices(&root)
+                            .map(|directory| directory.resolve(&alias).is_some())
+                            .unwrap_or(false);
+                        if !known {
+                            println!(
+                                "{}'{alias}' is not a known device — see 'devices'.{}",
+                                neonet::shell::RED,
+                                neonet::shell::RESET
+                            );
                             continue;
                         }
-                        let command = words[0].to_ascii_lowercase();
-                        let args = &words[1..];
-
-                        let mut quit = false;
-                        match command.as_str() {
-                            "help" => {
-                                println!("{}{}{}", neonet::shell::CYAN, neonet::shell::logo(), neonet::shell::RESET);
-                                println!("{BOLD}System{RESET}
-  echo TEXT                print text
-  clock                    toggle time in the prompt
-  history                  last commands
-  sysinfo                  host OS / RAM / battery
-  whoami                   this device's identity
-  devices                  known mesh devices
-  update [--repo R] [--branch B] [--release]   pull + rebuild (manual, fast-forward only)
-  help                     this list
-  clear                    clear the screen
-  reboot                   restart the shell
-  quit | exit              leave the shell
-{RESET}{BOLD}Tools & mesh{RESET}
-  nsh ALIAS [CMD...]       SSH redirector passthrough
-  connect ALIAS            same, interactive session via your ssh binary
-  browse ALIAS [PATH]      list a peer's shared directory (one-shot)
-  fork ALIAS PATH          pull a full local copy into NEONET_HOME/forked/ (one-shot)
-  send ALIAS FILE          send a file to any device (resumable)
-  channel ALIAS MSG        private 1:1 message, or show log with that peer
-  transfers                inbound file transfers and resume state
-  store push ALIAS FILE    encrypt + store chunks on a device (prints a file id)
-  store pull ALIAS ID [OUT]    fetch, decrypt, reconstruct
-  replicate SRC DST ID     copy a stored file between two cores (opaque to both)
-{RESET}{BOLD}Services & pairing{RESET}
-  register ALIAS ADDR [TTL]    publish your address at a rendezvous node
-  scan ALIAS [FILTER] [--active]   list registered devices
-  pair [TTL]               issue a single-use pairing token (this shell accepts)
-  flash ALIAS TOKEN        redeem an acceptor's pairing token
-  pairs [--as-allow]       show the pairing ledger (or emit an allow-list)
-  revoke DEVICE HEX        broadcast a signed revocation to a core
-  operator add HEX | operator list    manage this node's operator set
-{RESET}{BOLD}Lobby & messaging{RESET}
-  host LOBBY [--title T] [--welcome W] [--max-members N]   become the host
-  join LOBBY HOST_KEY_ALIAS LOBBY_KEY     join a lobby (relays arrive live here)
-  say TEXT                 post to the most recently joined lobby
-  post LOBBY TEXT          post to a specific lobby
-  lobby log [NAME]         show received posts
-  lobby members [NAME]     ask the host who is in
-  lobby leave [NAME]       leave a lobby
-{RESET}{BOLD}Daemons{RESET}
-  core --listen ADDR [--allow-file FILE]   launch a relay core in background
-  serve --listen ADDR [--allow-file FILE]  alias of core
-  edge --bootstrap FILE    launch an edge daemon in background
-  daemons                  list background daemons
-  stop PID                 stop a background daemon
-{RESET}");
-                            }
-                            "clear" => {
-                                print!("\x1b[2J\x1b[H");
-                                use std::io::Write;
-                                let _ = io::stdout().flush();
-                            }
-                            "clock" => {
-                                clock = !clock;
-                                println!(
-                                    "prompt time {}",
-                                    if clock { "on" } else { "off" }
-                                );
-                            }
-                            "echo" => println!("{}", args.join(" ")),
-                            "history" => {
-                                for entry in &history.entries {
-                                    println!("{entry}");
-                                }
-                            }
-                            "sysinfo" => {
-                                for row in neonet::shell::system_info() {
-                                    println!("{row}");
-                                }
-                            }
-                            "whoami" => {
-                                println!("NeoNet {SOFTWARE_VERSION}");
-                                println!(
-                                    "identity fingerprint: {}",
-                                    local_identity.public().fingerprint()
-                                );
-                                println!(
-                                    "public key: {}",
-                                    hex::encode(local_identity.public().public_key)
-                                );
-                                println!("identity key: {}", local_identity.path().display());
-                            }
-                            "devices" => {
-                                let directory = match load_devices(&root) {
-                                    Ok(d) => d,
-                                    Err(err) => {
-                                        println!("{}{:#}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                let devices = ssh::devices(&directory);
-                                if devices.is_empty() {
-                                    println!("No devices configured. Add entries to {}/devices.json — see docs/CLI.md#devices.", root.display());
-                                } else {
-                                    for (alias, fingerprint) in devices {
-                                        println!("{alias}\t{fingerprint}");
+                        let text = if args.len() > 1 {
+                            Some(args[1..].join(" "))
+                        } else {
+                            None
+                        };
+                        match session.peer(&root, &alias).await {
+                            Ok(peer) => match text {
+                                None => {
+                                    let lines =
+                                        neonet::lobby::read_channel(&root, &peer.fingerprint());
+                                    if lines.is_empty() {
+                                        println!(
+                                            "no channel messages with {} yet.",
+                                            peer.fingerprint()
+                                        );
+                                    } else {
+                                        for line in lines {
+                                            println!("{}\t{}\t{}", line.at, line.sender, line.text);
+                                        }
                                     }
                                 }
-                            }
-                            "quit" | "exit" => {
-                                quit = true;
-                            }
-                            "reboot" => {
-                                println!("Rebooting shell...");
-                                neonet::shell::boot();
-                                neonet::shell::home(None);
-                            }
-                            // ---- mesh ----
-                            "channel" => {
-                                // channel ALIAS MSG   send to that device
-                                // channel ALIAS       show the received log with that peer
-                                let Some(alias) = args.first().cloned() else {
-                                    println!("usage: channel ALIAS [MSG]  (MSG omitted — show the log with that peer)");
-                                    continue;
-                                };
-                                let known = load_devices(&root)
-                                    .map(|directory| directory.resolve(&alias).is_some())
-                                    .unwrap_or(false);
-                                if !known {
-                                    println!(
-                                        "{}'{alias}' is not a known device — see 'devices'.{}",
-                                        neonet::shell::RED,
-                                        neonet::shell::RESET
-                                    );
-                                    continue;
-                                }
-                                let text = if args.len() > 1 {
-                                    Some(args[1..].join(" "))
-                                } else {
-                                    None
-                                };
-                                match session.peer(&root, &alias).await {
-                                    Ok(peer) => match text {
-                                        None => {
-                                            let lines = neonet::lobby::read_channel(
-                                                &root,
-                                                &peer.fingerprint(),
-                                            );
-                                            if lines.is_empty() {
-                                                println!(
-                                                    "no channel messages with {} yet.",
-                                                    peer.fingerprint()
-                                                );
-                                            } else {
-                                                for line in lines {
+                                Some(text) => {
+                                    let reply = session
+                                        .call(
+                                            &root,
+                                            &alias,
+                                            neonet::app::AppFrame::Channel(
+                                                neonet::app::lobby::ChannelFrame::Send {
+                                                    text: text.clone(),
+                                                },
+                                            ),
+                                        )
+                                        .await;
+                                    match reply {
+                                        Ok(reply) => {
+                                            match neonet::app::AppFrame::decode(&reply.payload) {
+                                                neonet::app::AppFrame::Channel(
+                                                    neonet::app::lobby::ChannelFrame::Ack { at },
+                                                ) => {
                                                     println!(
-                                                        "{}\t{}\t{}",
-                                                        line.at, line.sender, line.text
+                                                        "{}channel message {} acked at {at}{}",
+                                                        neonet::shell::GREEN,
+                                                        text,
+                                                        neonet::shell::RESET
                                                     );
                                                 }
-                                            }
-                                        }
-                                        Some(text) => {
-                                            let reply = session
-                                                .call(
-                                                    &root,
-                                                    &alias,
-                                                    neonet::app::AppFrame::Channel(
-                                                        neonet::app::lobby::ChannelFrame::Send {
-                                                            text: text.clone(),
-                                                        },
-                                                    ),
-                                                )
-                                                .await;
-                                            match reply {
-                                                Ok(reply) => match neonet::app::AppFrame::decode(
-                                                    &reply.payload,
-                                                ) {
-                                                    neonet::app::AppFrame::Channel(
-                                                        neonet::app::lobby::ChannelFrame::Ack { at },
-                                                    ) => {
-                                                        println!(
-                                                            "{}channel message {} acked at {at}{}",
-                                                            neonet::shell::GREEN,
-                                                            text,
-                                                            neonet::shell::RESET
-                                                        );
-                                                    }
-                                                    other => println!(
-                                                        "{}unexpected reply: {other:?}{}",
-                                                        neonet::shell::RED,
-                                                        neonet::shell::RESET
-                                                    ),
-                                                },
-                                                Err(err) => println!(
-                                                    "{}{}{}",
+                                                other => println!(
+                                                    "{}unexpected reply: {other:?}{}",
                                                     neonet::shell::RED,
-                                                    err,
                                                     neonet::shell::RESET
                                                 ),
                                             }
                                         }
-                                    },
-                                    Err(err) => println!(
+                                        Err(err) => println!(
+                                            "{}{}{}",
+                                            neonet::shell::RED,
+                                            err,
+                                            neonet::shell::RESET
+                                        ),
+                                    }
+                                }
+                            },
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+                    "nsh" => {
+                        let alias = args.first().map(String::as_str).unwrap_or("");
+                        if alias.is_empty() {
+                            println!("usage: nsh ALIAS [CMD...]");
+                        } else {
+                            let directory = match load_devices(&root) {
+                                Ok(d) => d,
+                                Err(err) => {
+                                    println!(
+                                        "{}{:#}{}",
+                                        neonet::shell::RED,
+                                        err,
+                                        neonet::shell::RESET
+                                    );
+                                    continue;
+                                }
+                            };
+                            match ssh::connect(&directory, alias, &args[1..]) {
+                                Ok(_) => {}
+                                Err(err) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    err,
+                                    neonet::shell::RESET
+                                ),
+                            }
+                        }
+                    }
+                    "connect" => {
+                        let alias = args.first().map(String::as_str).unwrap_or("");
+                        if alias.is_empty() {
+                            println!("usage: connect ALIAS  (hand off to your ssh binary)");
+                        } else {
+                            let directory = match load_devices(&root) {
+                                Ok(d) => d,
+                                Err(err) => {
+                                    println!(
+                                        "{}{:#}{}",
+                                        neonet::shell::RED,
+                                        err,
+                                        neonet::shell::RESET
+                                    );
+                                    continue;
+                                }
+                            };
+                            let no_command: Vec<String> = Vec::new();
+                            match ssh::connect(&directory, alias, &no_command) {
+                                Ok(_) => {}
+                                Err(err) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    err,
+                                    neonet::shell::RESET
+                                ),
+                            }
+                        }
+                    }
+
+                    // ---- one-shot files & transfers (no mount needed) ----
+                    "browse" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let path = args.get(1).cloned().unwrap_or_else(|| ".".to_string());
+                        if device_id.is_empty() {
+                            println!("usage: browse ALIAS [PATH]");
+                        } else {
+                            let reply = session
+                                .call(
+                                    &root,
+                                    device_id,
+                                    neonet::app::AppFrame::Burrow(
+                                        neonet::app::burrow::BurrowFrame::List { path },
+                                    ),
+                                )
+                                .await;
+                            match reply {
+                                Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                    neonet::app::AppFrame::Burrow(
+                                        neonet::app::burrow::BurrowFrame::Listing {
+                                            entries, ..
+                                        },
+                                    ) => {
+                                        if entries.is_empty() {
+                                            println!("(empty)");
+                                        }
+                                        for entry in entries {
+                                            let suffix = match entry.kind {
+                                                neonet::burrow::EntryKind::File => "",
+                                                neonet::burrow::EntryKind::Directory => "/",
+                                                neonet::burrow::EntryKind::Symlink => "@",
+                                            };
+                                            println!("{}{}\t{}", entry.name, suffix, entry.size);
+                                        }
+                                    }
+                                    neonet::app::AppFrame::Burrow(
+                                        neonet::app::burrow::BurrowFrame::Error { message, .. },
+                                    ) => println!(
+                                        "{}{}{}",
+                                        neonet::shell::RED,
+                                        format_args!("browse failed on the host: {message}"),
+                                        neonet::shell::RESET
+                                    ),
+                                    other => println!(
+                                        "{}{:?}{}",
+                                        neonet::shell::RED,
+                                        other,
+                                        neonet::shell::RESET
+                                    ),
+                                },
+                                Err(err) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    err,
+                                    neonet::shell::RESET
+                                ),
+                            }
+                        }
+                    }
+                    "fork" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let path = args.get(1).cloned().unwrap_or_default();
+                        if device_id.is_empty() || path.is_empty() {
+                            println!("usage: fork ALIAS PATH  (one-shot)");
+                        } else {
+                            let reply = session
+                                .call(
+                                    &root,
+                                    device_id,
+                                    neonet::app::AppFrame::Burrow(
+                                        neonet::app::burrow::BurrowFrame::Read {
+                                            path: path.clone(),
+                                        },
+                                    ),
+                                )
+                                .await;
+                            match reply {
+                                Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                    neonet::app::AppFrame::Burrow(
+                                        neonet::app::burrow::BurrowFrame::Content { bytes, .. },
+                                    ) => {
+                                        let destination = root.join("forked").join(&path);
+                                        if let Err(err) = (|| -> io::Result<()> {
+                                            if let Some(parent) = destination.parent() {
+                                                fs::create_dir_all(parent)?;
+                                            }
+                                            fs::write(&destination, bytes)?;
+                                            Ok(())
+                                        })(
+                                        ) {
+                                            println!(
+                                                "{}{}{}",
+                                                neonet::shell::RED,
+                                                err,
+                                                neonet::shell::RESET
+                                            );
+                                        } else {
+                                            println!("forked {path} to {}", destination.display());
+                                        }
+                                    }
+                                    neonet::app::AppFrame::Burrow(
+                                        neonet::app::burrow::BurrowFrame::Error { message, .. },
+                                    ) => println!(
+                                        "{}{}{}",
+                                        neonet::shell::RED,
+                                        format_args!("fork failed on the host: {message}"),
+                                        neonet::shell::RESET
+                                    ),
+                                    other => println!(
+                                        "{}{:?}{}",
+                                        neonet::shell::RED,
+                                        other,
+                                        neonet::shell::RESET
+                                    ),
+                                },
+                                Err(err) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    err,
+                                    neonet::shell::RESET
+                                ),
+                            }
+                        }
+                    }
+                    "send" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let file = args.get(1).map(String::as_str).unwrap_or("");
+                        if device_id.is_empty() || file.is_empty() {
+                            println!("usage: send ALIAS FILE  (resumable)");
+                        } else {
+                            let file_path = PathBuf::from(file);
+                            if !file_path.exists() {
+                                println!("no such local file: {file}");
+                                continue;
+                            }
+                            let peer = match session.peer(&root, device_id).await {
+                                Ok(peer) => peer,
+                                Err(err) => {
+                                    println!(
                                         "{}{}{}",
                                         neonet::shell::RED,
                                         err,
                                         neonet::shell::RESET
-                                    ),
+                                    );
+                                    continue;
                                 }
-                            }
-                            "nsh" => {
-                                let alias = args.first().map(String::as_str).unwrap_or("");
-                                if alias.is_empty() {
-                                    println!("usage: nsh ALIAS [CMD...]");
-                                } else {
-                                    let directory = match load_devices(&root) {
-                                        Ok(d) => d,
-                                        Err(err) => {
-                                            println!("{}{:#}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                            continue;
-                                        }
-                                    };
-                                    match ssh::connect(&directory, alias, &args[1..]) {
-                                        Ok(_) => {}
-                                        Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                    }
-                                }
-                            }
-                            "connect" => {
-                                let alias = args.first().map(String::as_str).unwrap_or("");
-                                if alias.is_empty() {
-                                    println!("usage: connect ALIAS  (hand off to your ssh binary)");
-                                } else {
-                                    let directory = match load_devices(&root) {
-                                        Ok(d) => d,
-                                        Err(err) => {
-                                            println!("{}{:#}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                            continue;
-                                        }
-                                    };
-                                    let no_command: Vec<String> = Vec::new();
-                                    match ssh::connect(&directory, alias, &no_command) {
-                                        Ok(_) => {}
-                                        Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                    }
-                                }
-                            }
-
-                            // ---- one-shot files & transfers (no mount needed) ----
-                            "browse" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let path = args.get(1).cloned().unwrap_or_else(|| ".".to_string());
-                                if device_id.is_empty() {
-                                    println!("usage: browse ALIAS [PATH]");
-                                } else {
-                                    let reply = session
-                                        .call(
-                                            &root,
-                                            device_id,
-                                            neonet::app::AppFrame::Burrow(
-                                                neonet::app::burrow::BurrowFrame::List { path },
-                                            ),
-                                        )
-                                        .await;
-                                    match reply {
-                                        Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                            neonet::app::AppFrame::Burrow(
-                                                neonet::app::burrow::BurrowFrame::Listing { entries, .. },
-                                            ) => {
-                                                if entries.is_empty() {
-                                                    println!("(empty)");
-                                                }
-                                                for entry in entries {
-                                                    let suffix = match entry.kind {
-                                                        neonet::burrow::EntryKind::File => "",
-                                                        neonet::burrow::EntryKind::Directory => "/",
-                                                        neonet::burrow::EntryKind::Symlink => "@",
-                                                    };
-                                                    println!("{}{}\t{}", entry.name, suffix, entry.size);
-                                                }
-                                            }
-                                            neonet::app::AppFrame::Burrow(
-                                                neonet::app::burrow::BurrowFrame::Error { message, .. },
-                                            ) => println!(
-                                                "{}{}{}",
-                                                neonet::shell::RED,
-                                                format_args!("browse failed on the host: {message}"),
-                                                neonet::shell::RESET
-                                            ),
-                                            other => println!(
-                                                "{}{:?}{}",
-                                                neonet::shell::RED,
-                                                other,
-                                                neonet::shell::RESET
-                                            ),
-                                        },
-                                        Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                    }
-                                }
-                            }
-                            "fork" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let path = args.get(1).cloned().unwrap_or_default();
-                                if device_id.is_empty() || path.is_empty() {
-                                    println!("usage: fork ALIAS PATH  (one-shot)");
-                                } else {
-                                    let reply = session
-                                        .call(
-                                            &root,
-                                            device_id,
-                                            neonet::app::AppFrame::Burrow(
-                                                neonet::app::burrow::BurrowFrame::Read { path: path.clone() },
-                                            ),
-                                        )
-                                        .await;
-                                    match reply {
-                                        Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                            neonet::app::AppFrame::Burrow(
-                                                neonet::app::burrow::BurrowFrame::Content { bytes, .. },
-                                            ) => {
-                                                let destination = root.join("forked").join(&path);
-                                                if let Err(err) = (|| -> io::Result<()> {
-                                                    if let Some(parent) = destination.parent() {
-                                                        fs::create_dir_all(parent)?;
-                                                    }
-                                                    fs::write(&destination, bytes)?;
-                                                    Ok(())
-                                                })() {
-                                                    println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                                } else {
-                                                    println!("forked {path} to {}", destination.display());
-                                                }
-                                            }
-                                            neonet::app::AppFrame::Burrow(
-                                                neonet::app::burrow::BurrowFrame::Error { message, .. },
-                                            ) => println!(
-                                                "{}{}{}",
-                                                neonet::shell::RED,
-                                                format_args!("fork failed on the host: {message}"),
-                                                neonet::shell::RESET
-                                            ),
-                                            other => println!(
-                                                "{}{:?}{}",
-                                                neonet::shell::RED,
-                                                other,
-                                                neonet::shell::RESET
-                                            ),
-                                        },
-                                        Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                    }
-                                }
-                            }
-                            "send" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let file = args.get(1).map(String::as_str).unwrap_or("");
-                                if device_id.is_empty() || file.is_empty() {
-                                    println!("usage: send ALIAS FILE  (resumable)");
-                                } else {
-                                    let file_path = PathBuf::from(file);
-                                    if !file_path.exists() {
-                                        println!("no such local file: {file}");
-                                        continue;
-                                    }
-                                    let peer = match session.peer(&root, device_id).await {
-                                        Ok(peer) => peer,
-                                        Err(err) => {
-                                            println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                            continue;
-                                        }
-                                    };
-                                    match neonet::app::files::send_file_and_wait(
+                            };
+                            match neonet::app::files::send_file_and_wait(
                                         &peer,
                                         &mut session.client,
                                         file_path,
@@ -2263,38 +2456,38 @@ async fn run() -> Result<()> {
                                         ),
                                         Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
                                     }
+                        }
+                    }
+                    "transfers" => match neonet::files::list_transfers(&root) {
+                        Ok(transfers) => {
+                            if transfers.is_empty() {
+                                println!("No inbound transfers recorded on this device yet.");
+                            } else {
+                                for transfer in transfers {
+                                    let status = if transfer.verified == transfer.total {
+                                        "complete"
+                                    } else {
+                                        "incomplete"
+                                    };
+                                    println!(
+                                        "{}\t{}\t{}/{}\t{} lost\t{}",
+                                        transfer.id,
+                                        transfer.name,
+                                        transfer.verified,
+                                        transfer.total,
+                                        transfer.lost,
+                                        status,
+                                    );
                                 }
                             }
-                            "transfers" => {
-                                match neonet::files::list_transfers(&root) {
-                                    Ok(transfers) => {
-                                        if transfers.is_empty() {
-                                            println!("No inbound transfers recorded on this device yet.");
-                                        } else {
-                                            for transfer in transfers {
-                                                let status = if transfer.verified == transfer.total {
-                                                    "complete"
-                                                } else {
-                                                    "incomplete"
-                                                };
-                                                println!(
-                                                    "{}\t{}\t{}/{}\t{} lost\t{}",
-                                                    transfer.id,
-                                                    transfer.name,
-                                                    transfer.verified,
-                                                    transfer.total,
-                                                    transfer.lost,
-                                                    status,
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
-                            }
-                            "store" => {
-                                let subcommand = args.first().map(String::as_str).unwrap_or("");
-                                match subcommand {
+                        }
+                        Err(err) => {
+                            println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                        }
+                    },
+                    "store" => {
+                        let subcommand = args.first().map(String::as_str).unwrap_or("");
+                        match subcommand {
                                     "push" => {
                                         let device_id = args.get(1).map(String::as_str).unwrap_or("");
                                         let file = args.get(2).map(String::as_str).unwrap_or("");
@@ -2437,63 +2630,438 @@ async fn run() -> Result<()> {
                                         "usage: store push ALIAS FILE    |    store pull ALIAS FILEID [OUTPUT]"
                                     ),
                                 }
+                    }
+                    "replicate" => {
+                        let src = args.first().map(String::as_str).unwrap_or("");
+                        let dst = args.get(1).map(String::as_str).unwrap_or("");
+                        let file_id = args.get(2).map(String::as_str).unwrap_or("");
+                        if src.is_empty() || dst.is_empty() || file_id.is_empty() {
+                            println!("usage: replicate SRC DST FILEID  (copy a stored file between cores)");
+                            continue;
+                        }
+                        let directory = match load_devices(&root) {
+                            Ok(directory) => directory,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
                             }
-                            "replicate" => {
-                                let src = args.first().map(String::as_str).unwrap_or("");
-                                let dst = args.get(1).map(String::as_str).unwrap_or("");
-                                let file_id = args.get(2).map(String::as_str).unwrap_or("");
-                                if src.is_empty() || dst.is_empty() || file_id.is_empty() {
-                                    println!("usage: replicate SRC DST FILEID  (copy a stored file between cores)");
-                                    continue;
-                                }
-                                let directory = match load_devices(&root) {
-                                    Ok(directory) => directory,
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                let Some(dst_identity) = directory.resolve(dst).map(|record| record.identity.clone()) else {
+                        };
+                        let Some(dst_identity) =
+                            directory.resolve(dst).map(|record| record.identity.clone())
+                        else {
+                            println!(
+                                "{}{}{}",
+                                neonet::shell::RED,
+                                format_args!("device '{dst}' not found in devices.json"),
+                                neonet::shell::RESET
+                            );
+                            continue;
+                        };
+                        let src_identity = match session.peer(&root, src).await {
+                            Ok(peer) => peer,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        let (manifest, chunks) = match neonet::app::storage::pull_chunks(
+                            &src_identity,
+                            &mut session.client,
+                            file_id,
+                        )
+                        .await
+                        {
+                            Ok(pulled) => pulled,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        match neonet::app::storage::push_chunks(
+                            &dst_identity,
+                            &mut session.client,
+                            file_id,
+                            &manifest,
+                            &chunks,
+                        )
+                        .await
+                        {
+                            Ok(()) => println!(
+                                "replicated {file_id} ({} chunks) from {src} to {dst}",
+                                chunks.len()
+                            ),
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+
+                    // ---- services: rendezvous, pairing, operators ----
+                    "register" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let addr = args.get(1).map(String::as_str).unwrap_or("");
+                        if device_id.is_empty() || addr.is_empty() {
+                            println!("usage: register RENDEZVOUS_ALIAS ADDR [TTL_SECS]  (e.g. register ops 192.0.2.10:7000 3600)");
+                            continue;
+                        }
+                        if !addr.contains(':') {
+                            println!("{}ADDR must be a host:port peers can dial back, e.g. 192.0.2.10:7000{}", neonet::shell::RED, neonet::shell::RESET);
+                            continue;
+                        }
+                        let ttl = args.get(2).and_then(|value| value.parse::<u32>().ok());
+                        let frame = match ttl {
+                            Some(ttl) => neonet::app::rendezvous::register_frame_with_ttl(
+                                session.node(),
+                                addr.to_string(),
+                                ttl,
+                            ),
+                            None => neonet::app::rendezvous::register_frame(
+                                session.node(),
+                                addr.to_string(),
+                            ),
+                        };
+                        let reply = session
+                            .call(&root, device_id, neonet::app::AppFrame::Rendezvous(frame))
+                            .await;
+                        match reply {
+                            Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                neonet::app::AppFrame::Rendezvous(
+                                    neonet::app::rendezvous::RendezvousFrame::Registered,
+                                ) => println!("registered {addr} with {device_id}"),
+                                neonet::app::AppFrame::Rendezvous(
+                                    neonet::app::rendezvous::RendezvousFrame::Error { message },
+                                ) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    format_args!("{device_id} refused the registration: {message}"),
+                                    neonet::shell::RESET
+                                ),
+                                other => println!(
+                                    "{}{:?}{}",
+                                    neonet::shell::RED,
+                                    other,
+                                    neonet::shell::RESET
+                                ),
+                            },
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+                    "scan" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let filter = args.get(1).cloned();
+                        let active = args.iter().any(|arg| arg == "--active");
+                        if device_id.is_empty() {
+                            println!("usage: scan RENDEZVOUS_ALIAS [FILTER] [--active]");
+                            continue;
+                        }
+                        let reply = session
+                            .call(
+                                &root,
+                                device_id,
+                                neonet::app::AppFrame::Rendezvous(
+                                    neonet::app::rendezvous::RendezvousFrame::List,
+                                ),
+                            )
+                            .await;
+                        let records = match reply {
+                            Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                neonet::app::AppFrame::Rendezvous(
+                                    neonet::app::rendezvous::RendezvousFrame::ListResult {
+                                        records,
+                                    },
+                                ) => records,
+                                neonet::app::AppFrame::Rendezvous(
+                                    neonet::app::rendezvous::RendezvousFrame::Error { message },
+                                ) => {
                                     println!(
                                         "{}{}{}",
                                         neonet::shell::RED,
-                                        format_args!("device '{dst}' not found in devices.json"),
+                                        format_args!("{device_id} could not enumerate: {message}"),
                                         neonet::shell::RESET
                                     );
                                     continue;
-                                };
-                                let src_identity = match session.peer(&root, src).await {
-                                    Ok(peer) => peer,
+                                }
+                                other => {
+                                    println!(
+                                        "{}{:?}{}",
+                                        neonet::shell::RED,
+                                        other,
+                                        neonet::shell::RESET
+                                    );
+                                    continue;
+                                }
+                            },
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        let filter = filter.unwrap_or_default().to_lowercase();
+                        let mut hits: Vec<_> = records
+                            .iter()
+                            .filter(|record| {
+                                let fingerprint = record.identity.fingerprint().to_lowercase();
+                                filter.is_empty()
+                                    || fingerprint.contains(&filter)
+                                    || record.address.to_lowercase().contains(&filter)
+                            })
+                            .collect();
+                        hits.sort_by_key(|record| record.identity.fingerprint());
+                        if active {
+                            let mut live: Vec<&neonet::app::rendezvous::EndpointRecord> =
+                                Vec::new();
+                            for record in &hits {
+                                let probe = session
+                                    .call(
+                                        &root,
+                                        device_id,
+                                        neonet::app::AppFrame::Rendezvous(
+                                            neonet::app::rendezvous::RendezvousFrame::Probe {
+                                                fingerprint: record.identity.fingerprint(),
+                                            },
+                                        ),
+                                    )
+                                    .await;
+                                if let Ok(probe) = probe {
+                                    if let neonet::app::AppFrame::Rendezvous(
+                                        neonet::app::rendezvous::RendezvousFrame::ProbeResult {
+                                            alive,
+                                            ..
+                                        },
+                                    ) = neonet::app::AppFrame::decode(&probe.payload)
+                                    {
+                                        if alive {
+                                            live.push(record);
+                                        } else {
+                                            println!(
+                                                "{} @ {} (stale)",
+                                                record.identity.fingerprint(),
+                                                record.address
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            hits = live;
+                        }
+                        if hits.is_empty() {
+                            println!(
+                                "(no devices registered{})",
+                                if filter.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" matching '{filter}'")
+                                }
+                            );
+                        }
+                        for record in &hits {
+                            println!("{} @ {}", record.identity.fingerprint(), record.address);
+                        }
+                    }
+                    "flash" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let token = args.get(1).map(String::as_str).unwrap_or("");
+                        if device_id.is_empty() || token.is_empty() {
+                            println!("usage: flash ACCEPTOR_ALIAS TOKEN");
+                            continue;
+                        }
+                        let reply = session
+                            .call(
+                                &root,
+                                device_id,
+                                neonet::app::AppFrame::Pair(neonet::app::pair::PairFrame::Redeem {
+                                    token: token.to_string(),
+                                }),
+                            )
+                            .await;
+                        match reply {
+                            Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                neonet::app::AppFrame::Pair(
+                                    neonet::app::pair::PairFrame::Redeemed { fingerprint },
+                                ) => println!("{device_id} paired {fingerprint}"),
+                                neonet::app::AppFrame::Pair(
+                                    neonet::app::pair::PairFrame::Error { message },
+                                ) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    format_args!("{device_id} refused the token: {message}"),
+                                    neonet::shell::RESET
+                                ),
+                                other => println!(
+                                    "{}{:?}{}",
+                                    neonet::shell::RED,
+                                    other,
+                                    neonet::shell::RESET
+                                ),
+                            },
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+                    "pairs" => {
+                        if args.iter().any(|arg| arg == "--as-allow") {
+                            let keys = neonet::pair::paired_devices(&root)
+                                .iter()
+                                .map(|record| hex::encode(record.public_key))
+                                .collect::<Vec<String>>();
+                            match serde_json::to_string_pretty(&keys) {
+                                Ok(json) => println!("{json}"),
+                                Err(err) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    err,
+                                    neonet::shell::RESET
+                                ),
+                            }
+                        } else {
+                            let paired = neonet::pair::paired_devices(&root);
+                            if paired.is_empty() {
+                                println!(
+                                            "no pairings recorded yet — 'pair' issues a token, a peer redeems it with 'flash'."
+                                        );
+                            } else {
+                                for record in paired {
+                                    println!(
+                                        "{}\t{}\t{}",
+                                        record.fingerprint,
+                                        hex::encode(record.public_key),
+                                        record.paired_at
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    "pair" => {
+                        let ttl = args
+                            .iter()
+                            .position(|arg| arg == "--ttl")
+                            .and_then(|index| args.get(index + 1))
+                            .and_then(|value| value.parse::<u64>().ok())
+                            .or_else(|| args.first().and_then(|value| value.parse::<u64>().ok()));
+                        match neonet::pair::issue_token(&root, ttl) {
+                            Ok(token) => {
+                                println!(
+                                    "pairing token: {token}  (single use; {}s)",
+                                    ttl.unwrap_or(120)
+                                );
+                                println!(
+                                            "   this shell is the acceptor — a peer redeems the token with \
+                                             'flash <this-device-alias> {token}' while the shell stays open."
+                                        );
+                            }
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+                    "revoke" => {
+                        let device_id = args.first().map(String::as_str).unwrap_or("");
+                        let revoked = args.get(1).map(String::as_str).unwrap_or("");
+                        if device_id.is_empty() || revoked.is_empty() {
+                            println!("usage: revoke DEVICE HEX_PUBLIC_KEY  (the core applies it only if you are in its operator set)");
+                            continue;
+                        }
+                        let revoked_identity = match parse_public_key(revoked)
+                            .map(|public_key| PublicIdentity { public_key })
+                        {
+                            Ok(identity) => identity,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        let epoch = match next_revocation_epoch(&root) {
+                            Ok(epoch) => epoch,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        let payload = neonet::app::core::revoke_payload(epoch, &revoked_identity);
+                        let signature = reload_identity(&root).sign(&payload);
+                        let reply = session
+                            .call(
+                                &root,
+                                device_id,
+                                neonet::app::AppFrame::Core(
+                                    neonet::app::core::CoreFrame::RevokeBroadcast {
+                                        revoked: revoked_identity,
+                                        epoch,
+                                        signature,
+                                    },
+                                ),
+                            )
+                            .await;
+                        match reply {
+                            Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                neonet::app::AppFrame::Core(
+                                    neonet::app::core::CoreFrame::RevokeAck { epoch },
+                                ) => println!("{device_id} acknowledged revocation epoch {epoch}"),
+                                neonet::app::AppFrame::Core(
+                                    neonet::app::core::CoreFrame::RevokeRefuse { epoch, reason },
+                                ) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    format_args!(
+                                        "{device_id} refused revocation epoch {epoch}: {reason}"
+                                    ),
+                                    neonet::shell::RESET
+                                ),
+                                other => println!(
+                                    "{}{:?}{}",
+                                    neonet::shell::RED,
+                                    other,
+                                    neonet::shell::RESET
+                                ),
+                            },
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+                    "operator" => {
+                        let subcommand = args.first().map(String::as_str).unwrap_or("");
+                        match subcommand {
+                            "add" => {
+                                let hex_key = args.get(1).map(String::as_str).unwrap_or("");
+                                if hex_key.is_empty() {
+                                    println!("usage: operator add HEX_PUBLIC_KEY");
+                                    continue;
+                                }
+                                let identity = match parse_public_key(hex_key)
+                                    .map(|public_key| PublicIdentity { public_key })
+                                {
+                                    Ok(identity) => identity,
                                     Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                        println!(
+                                            "{}{}{}",
+                                            neonet::shell::RED,
+                                            err,
+                                            neonet::shell::RESET
+                                        );
                                         continue;
                                     }
                                 };
-                                let (manifest, chunks) = match neonet::app::storage::pull_chunks(
-                                    &src_identity,
-                                    &mut session.client,
-                                    file_id,
-                                )
-                                .await
-                                {
-                                    Ok(pulled) => pulled,
+                                let node = match Node::new(reload_identity(&root), 16) {
+                                    Ok(node) => node,
                                     Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                        println!(
+                                            "{}{}{}",
+                                            neonet::shell::RED,
+                                            err,
+                                            neonet::shell::RESET
+                                        );
                                         continue;
                                     }
                                 };
-                                match neonet::app::storage::push_chunks(
-                                    &dst_identity,
-                                    &mut session.client,
-                                    file_id,
-                                    &manifest,
-                                    &chunks,
-                                )
-                                .await
-                                {
+                                match neonet::app::core::set_operator(&node, &identity) {
                                     Ok(()) => println!(
-                                        "replicated {file_id} ({} chunks) from {src} to {dst}",
-                                        chunks.len()
+                                        "added {} to the operator set at {} (this node only)",
+                                        identity.fingerprint(),
+                                        root.join("operators.json").display()
                                     ),
                                     Err(err) => println!(
                                         "{}{}{}",
@@ -2503,606 +3071,297 @@ async fn run() -> Result<()> {
                                     ),
                                 }
                             }
-
-                            // ---- services: rendezvous, pairing, operators ----
-                            "register" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let addr = args.get(1).map(String::as_str).unwrap_or("");
-                                if device_id.is_empty() || addr.is_empty() {
-                                    println!("usage: register RENDEZVOUS_ALIAS ADDR [TTL_SECS]  (e.g. register ops 192.0.2.10:7000 3600)");
-                                    continue;
-                                }
-                                if !addr.contains(':') {
-                                    println!("{}ADDR must be a host:port peers can dial back, e.g. 192.0.2.10:7000{}", neonet::shell::RED, neonet::shell::RESET);
-                                    continue;
-                                }
-                                let ttl = args.get(2).and_then(|value| value.parse::<u32>().ok());
-                                let frame = match ttl {
-                                    Some(ttl) => neonet::app::rendezvous::register_frame_with_ttl(
-                                        session.node(),
-                                        addr.to_string(),
-                                        ttl,
-                                    ),
-                                    None => neonet::app::rendezvous::register_frame(
-                                        session.node(),
-                                        addr.to_string(),
-                                    ),
-                                };
-                                let reply = session
-                                    .call(&root, device_id, neonet::app::AppFrame::Rendezvous(frame))
-                                    .await;
-                                match reply {
-                                    Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                        neonet::app::AppFrame::Rendezvous(
-                                            neonet::app::rendezvous::RendezvousFrame::Registered,
-                                        ) => println!("registered {addr} with {device_id}"),
-                                        neonet::app::AppFrame::Rendezvous(
-                                            neonet::app::rendezvous::RendezvousFrame::Error { message },
-                                        ) => println!(
+                            "list" => {
+                                let node = match Node::new(reload_identity(&root), 16) {
+                                    Ok(node) => node,
+                                    Err(err) => {
+                                        println!(
                                             "{}{}{}",
                                             neonet::shell::RED,
-                                            format_args!("{device_id} refused the registration: {message}"),
+                                            err,
                                             neonet::shell::RESET
-                                        ),
-                                        other => println!(
-                                            "{}{:?}{}",
-                                            neonet::shell::RED,
-                                            other,
-                                            neonet::shell::RESET
-                                        ),
-                                    },
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
-                            }
-                            "scan" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let filter = args.get(1).cloned();
-                                let active = args.iter().any(|arg| arg == "--active");
-                                if device_id.is_empty() {
-                                    println!("usage: scan RENDEZVOUS_ALIAS [FILTER] [--active]");
-                                    continue;
-                                }
-                                let reply = session
-                                    .call(
-                                        &root,
-                                        device_id,
-                                        neonet::app::AppFrame::Rendezvous(
-                                            neonet::app::rendezvous::RendezvousFrame::List,
-                                        ),
-                                    )
-                                    .await;
-                                let records = match reply {
-                                    Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                        neonet::app::AppFrame::Rendezvous(
-                                            neonet::app::rendezvous::RendezvousFrame::ListResult { records },
-                                        ) => records,
-                                        neonet::app::AppFrame::Rendezvous(
-                                            neonet::app::rendezvous::RendezvousFrame::Error { message },
-                                        ) => {
-                                            println!(
-                                                "{}{}{}",
-                                                neonet::shell::RED,
-                                                format_args!("{device_id} could not enumerate: {message}"),
-                                                neonet::shell::RESET
-                                            );
-                                            continue;
-                                        }
-                                        other => {
-                                            println!("{}{:?}{}", neonet::shell::RED, other, neonet::shell::RESET);
-                                            continue;
-                                        }
-                                    },
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                        );
                                         continue;
                                     }
                                 };
-                                let filter = filter.unwrap_or_default().to_lowercase();
-                                let mut hits: Vec<_> = records
-                                    .iter()
-                                    .filter(|record| {
-                                        let fingerprint =
-                                            record.identity.fingerprint().to_lowercase();
-                                        filter.is_empty()
-                                            || fingerprint.contains(&filter)
-                                            || record.address.to_lowercase().contains(&filter)
-                                    })
-                                    .collect();
-                                hits.sort_by_key(|record| record.identity.fingerprint());
-                                if active {
-                                    let mut live: Vec<&neonet::app::rendezvous::EndpointRecord> =
-                                        Vec::new();
-                                    for record in &hits {
-                                        let probe = session
-                                            .call(
-                                                &root,
-                                                device_id,
-                                                neonet::app::AppFrame::Rendezvous(
-                                                    neonet::app::rendezvous::RendezvousFrame::Probe {
-                                                        fingerprint: record.identity.fingerprint(),
-                                                    },
-                                                ),
-                                            )
-                                            .await;
-                                        if let Ok(probe) = probe {
-                                            if let neonet::app::AppFrame::Rendezvous(
-                                                neonet::app::rendezvous::RendezvousFrame::ProbeResult { alive, .. },
-                                            ) = neonet::app::AppFrame::decode(&probe.payload)
-                                            {
-                                                if alive {
-                                                    live.push(record);
-                                                } else {
-                                                    println!(
-                                                        "{} @ {} (stale)",
-                                                        record.identity.fingerprint(),
-                                                        record.address
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                    hits = live;
-                                }
-                                if hits.is_empty() {
+                                let operators = neonet::app::core::operators(&node);
+                                if operators.is_empty() {
                                     println!(
-                                        "(no devices registered{})",
-                                        if filter.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!(" matching '{filter}'")
-                                        }
-                                    );
-                                }
-                                for record in &hits {
-                                    println!("{} @ {}", record.identity.fingerprint(), record.address);
-                                }
-                            }
-                            "flash" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let token = args.get(1).map(String::as_str).unwrap_or("");
-                                if device_id.is_empty() || token.is_empty() {
-                                    println!("usage: flash ACCEPTOR_ALIAS TOKEN");
-                                    continue;
-                                }
-                                let reply = session
-                                    .call(
-                                        &root,
-                                        device_id,
-                                        neonet::app::AppFrame::Pair(
-                                            neonet::app::pair::PairFrame::Redeem {
-                                                token: token.to_string(),
-                                            },
-                                        ),
-                                    )
-                                    .await;
-                                match reply {
-                                    Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                        neonet::app::AppFrame::Pair(
-                                            neonet::app::pair::PairFrame::Redeemed { fingerprint },
-                                        ) => println!("{device_id} paired {fingerprint}"),
-                                        neonet::app::AppFrame::Pair(
-                                            neonet::app::pair::PairFrame::Error { message },
-                                        ) => println!(
-                                            "{}{}{}",
-                                            neonet::shell::RED,
-                                            format_args!("{device_id} refused the token: {message}"),
-                                            neonet::shell::RESET
-                                        ),
-                                        other => println!(
-                                            "{}{:?}{}",
-                                            neonet::shell::RED,
-                                            other,
-                                            neonet::shell::RESET
-                                        ),
-                                    },
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
-                            }
-                            "pairs" => {
-                                if args.iter().any(|arg| arg == "--as-allow") {
-                                    let keys = neonet::pair::paired_devices(&root)
-                                        .iter()
-                                        .map(|record| hex::encode(record.public_key))
-                                        .collect::<Vec<String>>();
-                                    match serde_json::to_string_pretty(&keys) {
-                                        Ok(json) => println!("{json}"),
-                                        Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                    }
-                                } else {
-                                    let paired = neonet::pair::paired_devices(&root);
-                                    if paired.is_empty() {
-                                        println!(
-                                            "no pairings recorded yet — 'pair' issues a token, a peer redeems it with 'flash'."
-                                        );
-                                    } else {
-                                        for record in paired {
-                                            println!(
-                                                "{}\t{}\t{}",
-                                                record.fingerprint,
-                                                hex::encode(record.public_key),
-                                                record.paired_at
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            "pair" => {
-                                let ttl = args
-                                    .iter()
-                                    .position(|arg| arg == "--ttl")
-                                    .and_then(|index| args.get(index + 1))
-                                    .and_then(|value| value.parse::<u64>().ok())
-                                    .or_else(|| args.first().and_then(|value| value.parse::<u64>().ok()));
-                                match neonet::pair::issue_token(&root, ttl) {
-                                    Ok(token) => {
-                                        println!(
-                                            "pairing token: {token}  (single use; {}s)",
-                                            ttl.unwrap_or(120)
-                                        );
-                                        println!(
-                                            "   this shell is the acceptor — a peer redeems the token with \
-                                             'flash <this-device-alias> {token}' while the shell stays open."
-                                        );
-                                    }
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
-                            }
-                            "revoke" => {
-                                let device_id = args.first().map(String::as_str).unwrap_or("");
-                                let revoked = args.get(1).map(String::as_str).unwrap_or("");
-                                if device_id.is_empty() || revoked.is_empty() {
-                                    println!("usage: revoke DEVICE HEX_PUBLIC_KEY  (the core applies it only if you are in its operator set)");
-                                    continue;
-                                }
-                                let revoked_identity = match parse_public_key(revoked)
-                                    .map(|public_key| PublicIdentity { public_key })
-                                {
-                                    Ok(identity) => identity,
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                let epoch = match next_revocation_epoch(&root) {
-                                    Ok(epoch) => epoch,
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                let payload = neonet::app::core::revoke_payload(epoch, &revoked_identity);
-                                let signature = reload_identity(&root).sign(&payload);
-                                let reply = session
-                                    .call(
-                                        &root,
-                                        device_id,
-                                        neonet::app::AppFrame::Core(
-                                            neonet::app::core::CoreFrame::RevokeBroadcast {
-                                                revoked: revoked_identity,
-                                                epoch,
-                                                signature,
-                                            },
-                                        ),
-                                    )
-                                    .await;
-                                match reply {
-                                    Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                        neonet::app::AppFrame::Core(
-                                            neonet::app::core::CoreFrame::RevokeAck { epoch },
-                                        ) => println!("{device_id} acknowledged revocation epoch {epoch}"),
-                                        neonet::app::AppFrame::Core(
-                                            neonet::app::core::CoreFrame::RevokeRefuse { epoch, reason },
-                                        ) => println!(
-                                            "{}{}{}",
-                                            neonet::shell::RED,
-                                            format_args!("{device_id} refused revocation epoch {epoch}: {reason}"),
-                                            neonet::shell::RESET
-                                        ),
-                                        other => println!(
-                                            "{}{:?}{}",
-                                            neonet::shell::RED,
-                                            other,
-                                            neonet::shell::RESET
-                                        ),
-                                    },
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
-                            }
-                            "operator" => {
-                                let subcommand = args.first().map(String::as_str).unwrap_or("");
-                                match subcommand {
-                                    "add" => {
-                                        let hex_key = args.get(1).map(String::as_str).unwrap_or("");
-                                        if hex_key.is_empty() {
-                                            println!("usage: operator add HEX_PUBLIC_KEY");
-                                            continue;
-                                        }
-                                        let identity = match parse_public_key(hex_key)
-                                            .map(|public_key| PublicIdentity { public_key })
-                                        {
-                                            Ok(identity) => identity,
-                                            Err(err) => {
-                                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                                continue;
-                                            }
-                                        };
-                                        let node = match Node::new(reload_identity(&root), 16) {
-                                        Ok(node) => node,
-                                        Err(err) => {
-                                            println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                            continue;
-                                        }
-                                    };
-                                    match neonet::app::core::set_operator(&node, &identity) {
-                                            Ok(()) => println!(
-                                                "added {} to the operator set at {} (this node only)",
-                                                identity.fingerprint(),
-                                                root.join("operators.json").display()
-                                            ),
-                                            Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                        }
-                                    }
-                                    "list" => {
-                                        let node = match Node::new(reload_identity(&root), 16) {
-                                            Ok(node) => node,
-                                            Err(err) => {
-                                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                                continue;
-                                            }
-                                        };
-                                        let operators = neonet::app::core::operators(&node);
-                                        if operators.is_empty() {
-                                            println!(
                                                 "operator set is empty — no one can revoke through this node (fail closed). \
                                                  Add a key with 'operator add HEX'."
                                             );
-                                        } else {
-                                            for fingerprint in operators {
-                                                println!("{fingerprint}");
-                                            }
-                                        }
+                                } else {
+                                    for fingerprint in operators {
+                                        println!("{fingerprint}");
                                     }
-                                    _ => println!("usage: operator add HEX_PUBLIC_KEY | operator list"),
                                 }
                             }
+                            _ => println!("usage: operator add HEX_PUBLIC_KEY | operator list"),
+                        }
+                    }
 
-                            // ---- lobbies & messaging ----
-                            "host" => {
-                                let name = args.first().map(String::as_str).unwrap_or("");
-                                if name.is_empty() {
-                                    println!("usage: host LOBBY [--title T] [--welcome W] [--max-members N]");
-                                } else {
-                                    let title = flag_value(args, "--title");
-                                    let welcome = flag_value(args, "--welcome");
-                                    let max_members = flag_usize(args, "--max-members");
-                                    let key_hex = hex::encode(neonet::lobby::new_key());
-                                    neonet::app::lobby::register_host(
-                                        session.node().home(),
-                                        name,
-                                        &key_hex,
-                                        neonet::app::lobby::LobbyOptions {
-                                            title: title.clone().unwrap_or_default(),
-                                            welcome: welcome.clone().unwrap_or_default(),
-                                            max_members,
-                                        },
-                                    );
-                                    println!(
+                    // ---- lobbies & messaging ----
+                    "host" => {
+                        let name = args.first().map(String::as_str).unwrap_or("");
+                        if name.is_empty() {
+                            println!(
+                                "usage: host LOBBY [--title T] [--welcome W] [--max-members N]"
+                            );
+                        } else {
+                            let title = flag_value(args, "--title");
+                            let welcome = flag_value(args, "--welcome");
+                            let max_members = flag_usize(args, "--max-members");
+                            let key_hex = hex::encode(neonet::lobby::new_key());
+                            neonet::app::lobby::register_host(
+                                session.node().home(),
+                                name,
+                                &key_hex,
+                                neonet::app::lobby::LobbyOptions {
+                                    title: title.clone().unwrap_or_default(),
+                                    welcome: welcome.clone().unwrap_or_default(),
+                                    max_members,
+                                },
+                            );
+                            println!(
                                         "hosting lobby '{name}' ({}) — this shell is the host, members relay \
                                          through your device while the shell stays open.",
                                         title.as_deref().unwrap_or(name)
                                     );
-                                    if let Some(welcome) = &welcome {
-                                        println!("welcome message: {welcome}");
-                                    }
-                                    if let Some(cap) = max_members {
-                                        println!("seat cap: {cap} members (the host does not count)");
-                                    }
-                                    println!("  lobby key: {key_hex}");
+                            if let Some(welcome) = &welcome {
+                                println!("welcome message: {welcome}");
+                            }
+                            if let Some(cap) = max_members {
+                                println!("seat cap: {cap} members (the host does not count)");
+                            }
+                            println!("  lobby key: {key_hex}");
+                            println!(
+                                "members join with: join {name} <this-device-alias> {key_hex}"
+                            );
+                        }
+                    }
+                    "join" => {
+                        let lobby_name = args.first().map(String::as_str).unwrap_or("");
+                        let host_device_id = args.get(1).map(String::as_str).unwrap_or("");
+                        let key = args.get(2).map(String::as_str).unwrap_or("");
+                        if lobby_name.is_empty() || host_device_id.is_empty() || key.is_empty() {
+                            println!("usage: join LOBBY HOST_KEY_ALIAS LOBBY_KEY");
+                            continue;
+                        }
+                        let host_peer = match session.peer(&root, host_device_id).await {
+                            Ok(peer) => peer,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        let reply = match session
+                            .client
+                            .call(
+                                &host_peer,
+                                neonet::app::AppFrame::Lobby(
+                                    neonet::app::lobby::LobbyFrame::Join {
+                                        lobby_name: lobby_name.to_string(),
+                                        key: key.to_string(),
+                                    },
+                                ),
+                            )
+                            .await
+                        {
+                            Ok(reply) => reply,
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
+                                continue;
+                            }
+                        };
+                        match neonet::app::AppFrame::decode(&reply.payload) {
+                            neonet::app::AppFrame::Lobby(
+                                neonet::app::lobby::LobbyFrame::Joined {
+                                    lobby_name,
+                                    title,
+                                    welcome,
+                                },
+                            ) => {
+                                if let Err(err) = neonet::lobby::add_to_roster(
+                                    &root,
+                                    neonet::lobby::MemberLobby {
+                                        name: lobby_name.clone(),
+                                        host_alias: host_device_id.to_string(),
+                                        host_fingerprint: host_peer.fingerprint(),
+                                        key_hex: key.to_string(),
+                                        title: title.clone(),
+                                        welcome: welcome.clone(),
+                                    },
+                                ) {
                                     println!(
-                                        "members join with: join {name} <this-device-alias> {key_hex}"
+                                        "{}{}{}",
+                                        neonet::shell::RED,
+                                        err,
+                                        neonet::shell::RESET
                                     );
                                 }
-                            }
-                            "join" => {
-                                let lobby_name = args.first().map(String::as_str).unwrap_or("");
-                                let host_device_id = args.get(1).map(String::as_str).unwrap_or("");
-                                let key = args.get(2).map(String::as_str).unwrap_or("");
-                                if lobby_name.is_empty() || host_device_id.is_empty() || key.is_empty() {
-                                    println!("usage: join LOBBY HOST_KEY_ALIAS LOBBY_KEY");
-                                    continue;
+                                println!(
+                                    "joined lobby '{lobby_name}' ({})",
+                                    if title.is_empty() {
+                                        &lobby_name
+                                    } else {
+                                        &title
+                                    }
+                                );
+                                if !title.is_empty() && title != lobby_name {
+                                    println!("lobby title: {title}");
                                 }
-                                let host_peer = match session.peer(&root, host_device_id).await {
-                                    Ok(peer) => peer,
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                let reply = match session
-                                    .client
-                                    .call(
-                                        &host_peer,
-                                        neonet::app::AppFrame::Lobby(
-                                            neonet::app::lobby::LobbyFrame::Join {
-                                                lobby_name: lobby_name.to_string(),
-                                                key: key.to_string(),
-                                            },
-                                        ),
-                                    )
-                                    .await
-                                {
-                                    Ok(reply) => reply,
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                match neonet::app::AppFrame::decode(&reply.payload) {
-                                    neonet::app::AppFrame::Lobby(
-                                        neonet::app::lobby::LobbyFrame::Joined {
-                                            lobby_name,
-                                            title,
-                                            welcome,
-                                        },
-                                    ) => {
-                                        if let Err(err) = neonet::lobby::add_to_roster(
-                                            &root,
-                                            neonet::lobby::MemberLobby {
-                                                name: lobby_name.clone(),
-                                                host_alias: host_device_id.to_string(),
-                                                host_fingerprint: host_peer.fingerprint(),
-                                                key_hex: key.to_string(),
-                                                title: title.clone(),
-                                                welcome: welcome.clone(),
-                                            },
-                                        ) {
-                                            println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        }
-                                        println!(
-                                            "joined lobby '{lobby_name}' ({})",
-                                            if title.is_empty() { &lobby_name } else { &title }
-                                        );
-                                        if !title.is_empty() && title != lobby_name {
-                                            println!("lobby title: {title}");
-                                        }
-                                        if !welcome.is_empty() {
-                                            println!("{welcome}");
-                                        }
-                                        println!(
+                                if !welcome.is_empty() {
+                                    println!("{welcome}");
+                                }
+                                println!(
                                             "received posts land in {}/lobbies/{}.log — 'lobby log' to read",
                                             root.display(),
                                             neonet::lobby::slug(&lobby_name)
                                         );
-                                    }
-                                    neonet::app::AppFrame::Lobby(
-                                        neonet::app::lobby::LobbyFrame::Refuse { message },
-                                    ) => println!(
-                                        "{}{}{}",
-                                        neonet::shell::RED,
-                                        format_args!("{host_device_id} refused the lobby key: {message}"),
-                                        neonet::shell::RESET
-                                    ),
-                                    other => println!(
-                                        "{}{:?}{}",
-                                        neonet::shell::RED,
-                                        other,
-                                        neonet::shell::RESET
-                                    ),
-                                }
                             }
-                            "say" | "post" => {
-                                let explicit = command == "post"
-                                    && args.len() >= 2
-                                    && neonet::lobby::find_roster(&root, &args[0]).is_some();
-                                let (lobby_name, text) = if explicit {
-                                    (args[0].clone(), args[1..].join(" "))
-                                } else {
-                                    let text = args.join(" ");
-                                    if text.is_empty() {
-                                        println!("usage: say TEXT  (active lobby)  |  post LOBBY TEXT");
-                                        continue;
-                                    }
-                                    match neonet::lobby::last_roster(&root) {
-                                        Some(active) => (active.name.clone(), text),
-                                        None => {
-                                            println!(
+                            neonet::app::AppFrame::Lobby(
+                                neonet::app::lobby::LobbyFrame::Refuse { message },
+                            ) => println!(
+                                "{}{}{}",
+                                neonet::shell::RED,
+                                format_args!("{host_device_id} refused the lobby key: {message}"),
+                                neonet::shell::RESET
+                            ),
+                            other => println!(
+                                "{}{:?}{}",
+                                neonet::shell::RED,
+                                other,
+                                neonet::shell::RESET
+                            ),
+                        }
+                    }
+                    "say" | "post" => {
+                        let explicit = command == "post"
+                            && args.len() >= 2
+                            && neonet::lobby::find_roster(&root, &args[0]).is_some();
+                        let (lobby_name, text) = if explicit {
+                            (args[0].clone(), args[1..].join(" "))
+                        } else {
+                            let text = args.join(" ");
+                            if text.is_empty() {
+                                println!("usage: say TEXT  (active lobby)  |  post LOBBY TEXT");
+                                continue;
+                            }
+                            match neonet::lobby::last_roster(&root) {
+                                Some(active) => (active.name.clone(), text),
+                                None => {
+                                    println!(
                                                 "{}not a member of any lobby — 'join LOBBY HOST_KEY_ALIAS LOBBY_KEY' first{}",
                                                 neonet::shell::RED,
                                                 neonet::shell::RESET
                                             );
-                                            continue;
-                                        }
-                                    }
-                                };
-                                let roster = match neonet::lobby::find_roster(&root, &lobby_name) {
-                                    Some(roster) => roster,
-                                    None => {
-                                        println!(
-                                            "{}{}{}",
-                                            neonet::shell::RED,
-                                            format_args!("not a member of lobby '{lobby_name}' — 'join' it first"),
-                                            neonet::shell::RESET
-                                        );
-                                        continue;
-                                    }
-                                };
-                                let Some(key) = hex::decode(&roster.key_hex)
-                                    .ok()
-                                    .and_then(|bytes| bytes.try_into().ok())
-                                else {
-                                    println!("{}lobby roster holds a corrupt key{}", neonet::shell::RED, neonet::shell::RESET);
                                     continue;
-                                };
-                                let (nonce, ciphertext) = match neonet::lobby::encrypt(&key, text.as_bytes()) {
-                                    Ok(pair) => pair,
-                                    Err(err) => {
-                                        println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        continue;
-                                    }
-                                };
-                                let reply = session
-                                    .call(
-                                        &root,
-                                        &roster.host_alias,
-                                        neonet::app::AppFrame::Lobby(
-                                            neonet::app::lobby::LobbyFrame::Post {
-                                                lobby_name: lobby_name.clone(),
-                                                key: roster.key_hex.clone(),
-                                                nonce,
-                                                ciphertext,
-                                            },
-                                        ),
-                                    )
-                                    .await;
-                                match reply {
-                                    Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
-                                        neonet::app::AppFrame::Lobby(
-                                            neonet::app::lobby::LobbyFrame::Posted { relayed, .. },
-                                        ) => {
-                                            println!(
-                                                "posted to '{lobby_name}' (relayed to {relayed} member(s))."
-                                            );
-                                        }
-                                        neonet::app::AppFrame::Lobby(
-                                            neonet::app::lobby::LobbyFrame::Refuse { message },
-                                        ) => println!(
-                                            "{}{}{}",
-                                            neonet::shell::RED,
-                                            format_args!("the lobby refused the post: {message}"),
-                                            neonet::shell::RESET
-                                        ),
-                                        other => println!(
-                                            "{}{:?}{}",
-                                            neonet::shell::RED,
-                                            other,
-                                            neonet::shell::RESET
-                                        ),
-                                    },
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
                                 }
                             }
-                            "lobby" => {
-                                let subcommand = args.first().map(String::as_str).unwrap_or("");
-                                let name = args.get(1).cloned().or_else(|| {
-                                    neonet::lobby::last_roster(&root).map(|lobby| lobby.name.clone())
-                                });
-                                let name = match name {
-                                    Some(name) => name,
-                                    None => {
-                                        println!("not a member of any lobby yet — 'join' one first");
-                                        continue;
-                                    }
-                                };
-                                let Some(roster) = neonet::lobby::find_roster(&root, &name) else {
+                        };
+                        let roster = match neonet::lobby::find_roster(&root, &lobby_name) {
+                            Some(roster) => roster,
+                            None => {
+                                println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    format_args!(
+                                        "not a member of lobby '{lobby_name}' — 'join' it first"
+                                    ),
+                                    neonet::shell::RESET
+                                );
+                                continue;
+                            }
+                        };
+                        let Some(key) = hex::decode(&roster.key_hex)
+                            .ok()
+                            .and_then(|bytes| bytes.try_into().ok())
+                        else {
+                            println!(
+                                "{}lobby roster holds a corrupt key{}",
+                                neonet::shell::RED,
+                                neonet::shell::RESET
+                            );
+                            continue;
+                        };
+                        let (nonce, ciphertext) =
+                            match neonet::lobby::encrypt(&key, text.as_bytes()) {
+                                Ok(pair) => pair,
+                                Err(err) => {
                                     println!(
                                         "{}{}{}",
                                         neonet::shell::RED,
-                                        format_args!("not a member of lobby '{name}' — 'join' it first"),
+                                        err,
                                         neonet::shell::RESET
                                     );
                                     continue;
-                                };
-                                match subcommand {
+                                }
+                            };
+                        let reply = session
+                            .call(
+                                &root,
+                                &roster.host_alias,
+                                neonet::app::AppFrame::Lobby(
+                                    neonet::app::lobby::LobbyFrame::Post {
+                                        lobby_name: lobby_name.clone(),
+                                        key: roster.key_hex.clone(),
+                                        nonce,
+                                        ciphertext,
+                                    },
+                                ),
+                            )
+                            .await;
+                        match reply {
+                            Ok(reply) => match neonet::app::AppFrame::decode(&reply.payload) {
+                                neonet::app::AppFrame::Lobby(
+                                    neonet::app::lobby::LobbyFrame::Posted { relayed, .. },
+                                ) => {
+                                    println!(
+                                                "posted to '{lobby_name}' (relayed to {relayed} member(s))."
+                                            );
+                                }
+                                neonet::app::AppFrame::Lobby(
+                                    neonet::app::lobby::LobbyFrame::Refuse { message },
+                                ) => println!(
+                                    "{}{}{}",
+                                    neonet::shell::RED,
+                                    format_args!("the lobby refused the post: {message}"),
+                                    neonet::shell::RESET
+                                ),
+                                other => println!(
+                                    "{}{:?}{}",
+                                    neonet::shell::RED,
+                                    other,
+                                    neonet::shell::RESET
+                                ),
+                            },
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
+                        }
+                    }
+                    "lobby" => {
+                        let subcommand = args.first().map(String::as_str).unwrap_or("");
+                        let name = args.get(1).cloned().or_else(|| {
+                            neonet::lobby::last_roster(&root).map(|lobby| lobby.name.clone())
+                        });
+                        let name = match name {
+                            Some(name) => name,
+                            None => {
+                                println!("not a member of any lobby yet — 'join' one first");
+                                continue;
+                            }
+                        };
+                        let Some(roster) = neonet::lobby::find_roster(&root, &name) else {
+                            println!(
+                                "{}{}{}",
+                                neonet::shell::RED,
+                                format_args!("not a member of lobby '{name}' — 'join' it first"),
+                                neonet::shell::RESET
+                            );
+                            continue;
+                        };
+                        match subcommand {
                                     "log" => {
                                         let lines = neonet::lobby::read_lobby(&root, &name);
                                         if lines.is_empty() {
@@ -3200,108 +3459,108 @@ async fn run() -> Result<()> {
                                         "usage: lobby log [NAME] | lobby members [NAME] | lobby leave [NAME]"
                                     ),
                                 }
-                            }
+                    }
 
-                            // ---- infrastructure daemons & self-update ----
-                            "core" | "serve" | "edge" => {
-                                let daemon = command.as_str();
-                                if args.is_empty() {
-                                    let usage = if daemon == "edge" {
-                                        "usage: edge --bootstrap FILE"
-                                    } else {
-                                        "usage: core --listen ADDR [--allow-file FILE]  (serve is an alias)"
-                                    };
-                                    println!("{usage}");
-                                    continue;
-                                }
-                                let argv = args.to_vec();
-                                match spawn_daemon(&root, daemon, &argv) {
-                                    Ok((pid, log_path)) => println!(
-                                        "{}neonet {daemon} launched in background (pid {pid}) — log: {}{}",
-                                        neonet::shell::GREEN,
-                                        log_path.display(),
-                                        neonet::shell::RESET
-                                    ),
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
+                    // ---- infrastructure daemons & self-update ----
+                    "core" | "serve" | "edge" => {
+                        let daemon = command.as_str();
+                        if args.is_empty() {
+                            let usage = if daemon == "edge" {
+                                "usage: edge --bootstrap FILE"
+                            } else {
+                                "usage: core --listen ADDR [--allow-file FILE]  (serve is an alias)"
+                            };
+                            println!("{usage}");
+                            continue;
+                        }
+                        let argv = args.to_vec();
+                        match spawn_daemon(&root, daemon, &argv) {
+                            Ok((pid, log_path)) => println!(
+                                "{}neonet {daemon} launched in background (pid {pid}) — log: {}{}",
+                                neonet::shell::GREEN,
+                                log_path.display(),
+                                neonet::shell::RESET
+                            ),
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
                             }
-                            "daemons" => {
-                                let daemons = list_daemons(&root);
-                                if daemons.is_empty() {
-                                    println!("no daemons launched from this shell yet — 'core', 'serve', 'edge'.");
-                                } else {
-                                    for (name, pid, log) in daemons {
-                                        println!("{pid}\t{name}\t{log}");
-                                    }
-                                    println!("stop one with 'stop PID'.");
-                                }
+                        }
+                    }
+                    "daemons" => {
+                        let daemons = list_daemons(&root);
+                        if daemons.is_empty() {
+                            println!("no daemons launched from this shell yet — 'core', 'serve', 'edge'.");
+                        } else {
+                            for (name, pid, log) in daemons {
+                                println!("{pid}\t{name}\t{log}");
                             }
-                            "stop" => {
-                                let pid_text = args.first().map(String::as_str).unwrap_or("");
-                                let pid = match pid_text.parse::<u32>() {
-                                    Ok(pid) => pid,
-                                    Err(_) => {
-                                        println!("usage: stop PID  (see 'daemons')");
-                                        continue;
-                                    }
-                                };
-                                match std::process::Command::new("kill")
-                                    .arg(pid_text)
-                                    .status()
-                                {
-                                    Ok(status) if status.success() => {
-                                        let remaining = list_daemons(&root)
-                                            .into_iter()
-                                            .filter(|(_, known, _)| *known != pid)
-                                            .collect::<Vec<_>>();
-                                        if let Err(err) = save_daemons(&root, &remaining) {
-                                            println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
-                                        }
-                                        println!("stopped pid {pid}.");
-                                    }
-                                    Ok(_) => println!(
+                            println!("stop one with 'stop PID'.");
+                        }
+                    }
+                    "stop" => {
+                        let pid_text = args.first().map(String::as_str).unwrap_or("");
+                        let pid = match pid_text.parse::<u32>() {
+                            Ok(pid) => pid,
+                            Err(_) => {
+                                println!("usage: stop PID  (see 'daemons')");
+                                continue;
+                            }
+                        };
+                        match std::process::Command::new("kill").arg(pid_text).status() {
+                            Ok(status) if status.success() => {
+                                let remaining = list_daemons(&root)
+                                    .into_iter()
+                                    .filter(|(_, known, _)| *known != pid)
+                                    .collect::<Vec<_>>();
+                                if let Err(err) = save_daemons(&root, &remaining) {
+                                    println!(
                                         "{}{}{}",
-                                        neonet::shell::RED,
-                                        format_args!("kill did not stop pid {pid}"),
-                                        neonet::shell::RESET
-                                    ),
-                                    Err(err) => println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET),
-                                }
-                            }
-                            "update" => {
-                                let repo = flag_value(args, "--repo");
-                                let branch = flag_value(args, "--branch");
-                                let release = args.iter().any(|arg| arg == "--release");
-                                match neonet::update::run(repo.as_deref(), branch.as_deref(), release) {
-                                    Ok(()) => {}
-                                    Err(err) => println!(
-                                        "{}{:#}{}",
                                         neonet::shell::RED,
                                         err,
                                         neonet::shell::RESET
-                                    ),
+                                    );
                                 }
+                                println!("stopped pid {pid}.");
                             }
-                            other => {
-                                println!(
-                                    "{}'{}' is not recognized as a command{}",
-                                    neonet::shell::RED,
-                                    other,
-                                    neonet::shell::RESET,
-                                );
-                                println!("Type 'help' for the command list.");
+                            Ok(_) => println!(
+                                "{}{}{}",
+                                neonet::shell::RED,
+                                format_args!("kill did not stop pid {pid}"),
+                                neonet::shell::RESET
+                            ),
+                            Err(err) => {
+                                println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET)
                             }
                         }
-
-                        if quit {
-                            break;
+                    }
+                    "update" => {
+                        let repo = flag_value(args, "--repo");
+                        let branch = flag_value(args, "--branch");
+                        let release = args.iter().any(|arg| arg == "--release");
+                        match neonet::update::run(repo.as_deref(), branch.as_deref(), release) {
+                            Ok(()) => {}
+                            Err(err) => {
+                                println!("{}{:#}{}", neonet::shell::RED, err, neonet::shell::RESET)
+                            }
                         }
-                        continue;
+                    }
+                    other => {
+                        println!(
+                            "{}'{}' is not recognized as a command{}",
+                            neonet::shell::RED,
+                            other,
+                            neonet::shell::RESET,
+                        );
+                        println!("Type 'help' for the command list.");
                     }
                 }
+
+                if quit {
+                    break;
+                }
+                continue;
             }
 
-            let _ = stdin_reader.join();
             println!();
             if let Err(err) = history.save(&root) {
                 println!("{}{}{}", neonet::shell::RED, err, neonet::shell::RESET);
@@ -3315,6 +3574,62 @@ async fn run() -> Result<()> {
         }) => {
             neonet::update::run(repo.as_deref(), branch.as_deref(), release)?;
         }
+        Some(Command::Flasher { command }) => match command {
+            FlasherCommand::Ensure { dir } => {
+                let usb = dir.unwrap_or_else(|| PathBuf::from("."));
+                match neonet::flasher::ensure(Some(&usb)) {
+                    Ok(message) => println!("{message}"),
+                    Err(err) => anyhow::bail!("{err}"),
+                }
+            }
+            FlasherCommand::Author { dir } => {
+                match neonet::flasher::author(&root, &dir, &local_identity) {
+                    Ok(bundle) => {
+                        println!(
+                            "flashed {} bundle into {}",
+                            neonet::flasher::BUNDLE_FILE,
+                            dir.join(neonet::flasher::BUNDLE_FILE).display()
+                        );
+                        println!(
+                            "source: {} (alias {}) — token valid for {}s",
+                            bundle.source.fingerprint, bundle.source.alias, bundle.ttl
+                        );
+                    }
+                    Err(err) => anyhow::bail!("{err}"),
+                }
+            }
+            FlasherCommand::Adopt { dir, yes } => {
+                let mut confirm =
+                    |source: &neonet::flasher::FlashedSource| -> std::io::Result<bool> {
+                        if yes {
+                            return Ok(true);
+                        }
+                        use std::io::Write;
+                        print!(
+                        "This drive was flashed from {} ({}). Trust it and pair with it? [y/N] ",
+                        source.alias, source.fingerprint
+                    );
+                        std::io::stdout().flush()?;
+                        let mut line = String::new();
+                        std::io::stdin().read_line(&mut line)?;
+                        let answer = line.trim().to_ascii_lowercase();
+                        Ok(answer == "y" || answer == "yes")
+                    };
+                match neonet::flasher::adopt(&root, &dir, &mut confirm) {
+                    Ok(summary) => {
+                        if summary.trusted {
+                            println!(
+                                "paired & trusted {} ({})",
+                                summary.source.alias, summary.source.fingerprint
+                            );
+                        } else {
+                            println!("skipped — no trust recorded");
+                        }
+                    }
+                    Err(err) => anyhow::bail!("{err}"),
+                }
+            }
+        },
     }
     Ok(())
 }

@@ -326,6 +326,71 @@ decision. (The accept gate deliberately is not auto-opened by a pairing —
 that would recreate the silent-first-hookup behavior pairing exists to
 avoid.)
 
+### `neonet flasher` — pair two machines from a USB drive
+
+The flasher is the same physical idea as `pair`/`flash`, but carried on an
+actual drive: a directory (usually a mounted USB stick) that can hold a
+bundled `neonet` binary and an identity+token bundle written by the machine
+it was flashed *from*. It turns "plug the drive in on each machine" into a
+pair-and-trust without typing keys, codes, or pins.
+
+Build a drive, then author it on machine A, then adopt it on machine B:
+
+```
+# 1. build the drive once (wraps the current release binary + a README)
+./flasher-install.sh /media/usb
+
+# 2. on the machine you are flashing FROM
+neonet flasher author --dir /media/usb        # writes bin/ + flashed.json (identity + token)
+
+# 3. on the target machine (may not have neonet installed)
+neonet flasher ensure --dir /media/usb        # install neonet if missing
+neonet flasher adopt  --dir /media/usb        # confirm, then pair & trust the source
+```
+
+Three operations, each honest about what it does offline:
+
+#### `neonet flasher ensure [--dir <drive>]`
+
+The installed?-checker. If `neonet` is already installed it says so and does
+nothing. Otherwise it installs it, preferring a bundled binary on the drive
+(`<drive>/bin/neonet` — no toolchain needed), then falling back to a source
+build (`install.sh`-style) when cargo/rustc are present. Errors clearly if
+neither is available.
+
+#### `neonet flasher author --dir <drive>`
+
+Runs on the machine being flashed from. It issues a fresh single-use pairing
+token (short window, exactly like `neonet pair`) and writes `flashed.json`
+into the drive: that machine's public identity + fingerprint + the token.
+The drive is now "flashed from" this machine. Re-running replaces the bundle.
+
+#### `neonet flasher adopt --dir <drive>` / `--yes`
+
+Runs on the target machine. It reads `flashed.json` from the drive, then
+**always asks for explicit confirmation** before trusting anything:
+
+```
+This drive was flashed from flashed-from (c8195f61...). Trust it and pair with it? [y/N]
+```
+
+Only an explicit `y`/`yes` records the flashed-from device in this machine's
+pairing ledger (`paired.json`) **and** saves it as a known device
+(`devices.json`), so it can be reached through the mesh. `--yes` skips the
+prompt (automation/tests only — not recommended on a live machine).
+
+> **Why the confirmation?** A drive that silently installed software *and*
+> silently trusted its origin on plug-in is exactly the autorun-malware
+> pattern every OS fights. The explicit confirmation is the "person at the
+> target machine saying yes once" guard — the same reason `neonet pair` is an
+> active decision rather than silent first-contact trust.
+>
+> **Network note.** On Linux `ensure`/`author`/`adopt` are fully offline — the
+> drive itself carries identity + token. Making the *source* record the target
+> in return (and actually reaching it) still needs the two machines to share a
+> mesh path, exactly as with `pair`/`flash`; the flasher does the out-of-band
+> carry so no keys or pins cross the network.
+
 ### `neonet host <lobby_name> [--bootstrap <file>] [--title <text>] [--welcome <text>] [--max-members <n>]`
 
 Runs this device as a lobby **host** and prints the lobby key once.
@@ -467,6 +532,7 @@ scan ALIAS [FILTER] [--active]  list registered devices
 pair [TTL]                      issue a single-use pairing token (this shell accepts)
 flash ALIAS TOKEN               redeem an acceptor's pairing token
 pairs [--as-allow]              show the pairing ledger (or an allow-list)
+flasher ensure|author|adopt     USB drive pairing (+ installed?-checker / auto-install)
 revoke DEVICE HEX               broadcast a signed revocation
 operator add HEX | operator list
 ```
@@ -492,7 +558,24 @@ daemons / stop PID
 
 The shell holds one persistent mesh session while it is open, so it can host
 lobbies, accept pairings, and receive channel relays live at the prompt.
-`Ctrl-C` prints "use 'quit' to exit" instead of killing the session.
+`Ctrl-C` prints "use 'quit' to exit" instead of killing the session; `Ctrl-D`
+(EOF) leaves the shell.
+
+#### A friendlier prompt
+
+The prompt is a simple arrow (`⟫`) — the old `NEONET L:/` "drive" marker is
+gone in v1 since there is no virtual drive. Typing at the prompt is a real
+line editor (rustyline):
+
+- **Arrow keys** move and edit the cursor on the current line.
+- **Up/Down** walk through your command history (also shown by `history`).
+- **Tab** completes a partially-typed command (e.g. `wh<Tab>` → `whoami`).
+- **`help`** on its own prints a short welcome with topic names.
+- **`help <topic>`** drills into detail: `devices`, `files`, `messages`,
+  `chat`, `pair`, `mesh`, `system`.
+
+`whoami` shows a short human-friendly device id (first 12 hex characters)
+instead of the full raw fingerprint; the full id is printed underneath.
 
 ### `neonet update`
 

@@ -3,6 +3,7 @@ pub mod bootstrap;
 pub mod burrow;
 pub mod core;
 pub mod files;
+pub mod flasher;
 pub mod identity;
 pub mod installer;
 pub mod lobby;
